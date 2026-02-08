@@ -1,146 +1,96 @@
 import streamlit as st
 import pandas as pd
-import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
 
-# ─────────────────────────────────────────────
-# 1. APP CONFIG & STYLING
-# ─────────────────────────────────────────────
-st.set_page_config(page_title="Uppseekers Admit AI", page_icon="Uppseekers Logo.png", layout="centered")
+# --- CONFIGURATION ---
+st.set_page_config(layout="wide", page_title="University Profiling Tool")
 
-def apply_styles():
-    st.markdown("""
-        <style>
-        .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #004aad; color: white; font-weight: bold; border: none; }
-        .card { background-color: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #eee; margin-bottom: 20px; }
-        </style>
-    """, unsafe_allow_html=True)
+REGIONAL_WEIGHTS = {
+    "USA": [0.20, 0.10, 0.05, 0.05, 0.15, 0.05, 0.20, 0.10, 0.05, 0.05],
+    "UK": [0.25, 0.10, 0.05, 0.05, 0.30, 0.02, 0.10, 0.03, 0.00, 0.10],
+    "Germany": [0.35, 0.10, 0.05, 0.05, 0.05, 0.00, 0.35, 0.00, 0.00, 0.05],
+    "Singapore": [0.30, 0.10, 0.10, 0.15, 0.10, 0.02, 0.15, 0.03, 0.00, 0.05],
+    "Australia": [0.30, 0.10, 0.10, 0.05, 0.10, 0.05, 0.20, 0.05, 0.00, 0.05],
+    "Canada": [0.25, 0.10, 0.05, 0.05, 0.15, 0.05, 0.20, 0.10, 0.00, 0.05],
+    "Netherlands": [0.35, 0.15, 0.05, 0.05, 0.10, 0.00, 0.25, 0.00, 0.00, 0.05],
+    "European Countries": [0.30, 0.15, 0.05, 0.05, 0.10, 0.05, 0.20, 0.05, 0.00, 0.05],
+    "Japan": [0.40, 0.10, 0.10, 0.10, 0.10, 0.00, 0.10, 0.05, 0.00, 0.05],
+    "Other Asian": [0.40, 0.10, 0.15, 0.10, 0.05, 0.02, 0.10, 0.03, 0.00, 0.05]
+}
 
-# ─────────────────────────────────────────────
-# 2. DATA LOADERS
-# ─────────────────────────────────────────────
-def load_data():
-    try:
-        xls = pd.ExcelFile("University Readiness_new.xlsx")
-        idx = xls.parse(xls.sheet_names[0])
-        return xls, dict(zip(idx.iloc[:,0], idx.iloc[:,1]))
-    except:
-        st.error("Missing: University Readiness_new.xlsx")
-        st.stop()
+CATEGORIES = ["Academics", "Rigor", "Testing", "Merit", "Research", "Engagement", "Experience", "Impact", "Public Voice", "Recognition"]
 
-def load_benchmarking():
-    try:
-        bxls = pd.ExcelFile("Benchmarking_USA.xlsx")
-        idx = bxls.parse(bxls.sheet_names[0])
-        return bxls, dict(zip(idx.iloc[:,0], idx.iloc[:,1]))
-    except:
-        st.error("Missing: Benchmarking_USA.xlsx")
-        st.stop()
+# --- HELPER FUNCTIONS ---
+def calculate_regional_score(category_scores, weights):
+    # category_scores: list of 10 values
+    return sum(s * w for s, w in zip(category_scores, weights))
 
-# ─────────────────────────────────────────────
-# 3. PDF GENERATION (9-LIST LOGIC)
-# ─────────────────────────────────────────────
-def generate_pdf(name, s_class, course, score, responses, bench_df, q_bench, countries, counsellor):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
-    styles = getSampleStyleSheet()
-    elements = []
+def get_status(score, benchmark):
+    if score >= benchmark:
+        return "✅ Safe to Target"
+    elif score >= (benchmark * 0.85):
+        return "⚠️ Need Strengthening"
+    else:
+        return "❌ Significant Gap"
 
-    # Logo & Header
-    try:
-        elements.append(Image("Uppseekers Logo.png", width=140, height=42))
-        elements.append(Spacer(1, 15))
-    except: pass
+# --- SIDEBAR: FILE UPLOADS ---
+st.sidebar.header("Upload Files")
+q_file = st.sidebar.file_uploader("Upload Readiness File (Questions)", type=['xlsx'])
+b_file = st.sidebar.file_uploader("Upload Benchmarking File", type=['xlsx'])
 
-    elements.append(Paragraph(f"Admit AI Analysis: {name}", styles['Title']))
-    elements.append(Paragraph(f"<b>Class:</b> {s_class} | <b>Course:</b> {course} | <b>Counsellor:</b> {counsellor}", styles['Normal']))
-    elements.append(Spacer(1, 15))
-    elements.append(Paragraph(f"Overall Profile Score: {round(score, 1)}", styles['Heading2']))
-    elements.append(Spacer(1, 15))
+if q_file and b_file:
+    df_q = pd.read_excel(q_file)
+    df_b = pd.read_excel(b_file)
 
-    def add_table(df, title, color):
-        if not df.empty:
-            elements.append(Paragraph(title, ParagraphStyle('B', parent=styles['Heading4'], textColor=color)))
-            u_data = [["University", "Target Score", "Gap %"]]
-            for _, row in df.sort_values("Score Gap %", ascending=False).head(5).iterrows():
-                u_data.append([row["University"], str(round(row["Total Benchmark Score"], 1)), f"{round(row['Score Gap %'], 1)}%"])
-            ut = Table(u_data, colWidths=[300, 70, 80])
-            ut.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0), color), ('TEXTCOLOR',(0,0),(-1,0), colors.whitesmoke), ('GRID',(0,0),(-1,-1),0.5,colors.black)]))
-            elements.append(ut)
-            elements.append(Spacer(1, 12))
+    # Stream Selection
+    streams = df_q['Stream'].unique()
+    selected_stream = st.sidebar.selectbox("Select Student Stream", streams)
+    filtered_q = df_q[df_q['Stream'] == selected_stream]
 
-    # Generate 9 Lists (3 Categories x 3 Countries)
-    for country in countries:
-        elements.append(Paragraph(f"Country: {country}", styles['Heading3']))
-        c_df = bench_df[bench_df["Country"] == country] if "Country" in bench_df.columns else bench_df
-        
-        # Continuous Bucket Logic: ensures every university belongs to a list
-        safe = c_df[c_df["Score Gap %"] >= -2]
-        target = c_df[(c_df["Score Gap %"] < -2) & (c_df["Score Gap %"] >= -15)]
-        dream = c_df[c_df["Score Gap %"] < -15]
+    st.title(f"Profiling: {selected_stream}")
 
-        add_table(safe, f"Safe - {country}", colors.darkgreen)
-        add_table(target, f"Target - {country}", colors.orange)
-        add_table(dream, f"Dream - {country}", colors.red)
-        elements.append(Spacer(1, 10))
-
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
-
-# ─────────────────────────────────────────────
-# 4. APP INTERFACE
-# ─────────────────────────────────────────────
-apply_styles()
-if 'page' not in st.session_state: st.session_state.page = 'intro'
-
-if st.session_state.page == 'intro':
-    st.title("🎓 Uppseekers Admit AI")
-    with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        name = st.text_input("Student Name")
-        country_list = ["USA", "UK", "Canada", "Singapore", "Australia", "Europe"]
-        pref_countries = st.multiselect("Preferred Countries (Select 3)", country_list, max_selections=3)
-        xls, s_map = load_data()
-        course = st.selectbox("Interested Course", list(s_map.keys()))
-        if st.button("Start Analysis"):
-            if name and pref_countries:
-                st.session_state.update({"name": name, "course": course, "countries": pref_countries, "s_map": s_map, "page": 'questions'})
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-elif st.session_state.page == 'questions':
-    xls, _ = load_data()
-    df = xls.parse(st.session_state.s_map[st.session_state.course])
-    total_score, responses = 0, []
+    # Layout for Side-by-Side Questioning
+    col_student, col_counselor = st.columns(2)
     
-    for idx, row in df.iterrows():
-        st.markdown(f"**{row['question_text']}**")
-        opts = ["None / Not Selected"]
-        v_map = {"None / Not Selected": 0}
-        for c in 'ABCDE':
-            if pd.notna(row.get(f'option_{c}')):
-                label = f"{c}) {str(row[f'option_{c}']).strip()}"
-                opts.append(label); v_map[label] = row[f'score_{c}']
-        sel = st.selectbox("Select Answer", opts, key=f"q{idx}")
-        total_score += v_map[sel]
-        responses.append((row['question_text'], sel, v_map[sel]))
-    
-    if st.button("Generate My Report"):
-        bxls, b_map = load_benchmarking()
-        bench = bxls.parse(b_map[st.session_state.course])
-        bench["Score Gap %"] = ((total_score - bench["Total Benchmark Score"]) / bench["Total Benchmark Score"]) * 100
-        st.session_state.update({"total_score": total_score, "responses": responses, "bench_df": bench, "page": 'counsellor'})
-        st.rerun()
+    student_selections = {}
+    tuned_selections = {}
 
-elif st.session_state.page == 'counsellor':
-    st.title("🛡️ Authorization")
-    c_name = st.text_input("Counsellor Name")
-    c_code = st.text_input("Access Pin", type="password")
-    if st.button("Download 9-List Report"):
-        if c_code == "304":
-            pdf = generate_pdf(st.session_state.name, "12", st.session_state.course, st.session_state.total_score, st.session_state.responses, st.session_state.bench_df, {}, st.session_state.countries, c_name)
-            st.download_button("📥 Get PDF Report", data=pdf, file_name="AdmitAI_Report.pdf")
+    with col_student:
+        st.header("Student Current Profile")
+        for cat in CATEGORIES:
+            st.subheader(f"Category: {cat}")
+            cat_qs = filtered_q[filtered_q['Category'] == cat]
+            for i, row in cat_qs.iterrows():
+                # Assuming options are stored in a way we can extract
+                options = [row['Option 1'], row['Option 2'], row['Option 3']] # Adjust based on your Excel headers
+                student_selections[row['Question']] = st.selectbox(f"{row['Question']}", options, key=f"std_{i}")
+
+    with col_counselor:
+        st.header("Counselor Tuning (Target)")
+        for cat in CATEGORIES:
+            st.subheader(f"Tuning: {cat}")
+            cat_qs = filtered_q[filtered_q['Category'] == cat]
+            for i, row in cat_qs.iterrows():
+                options = [row['Option 1'], row['Option 2'], row['Option 3']]
+                tuned_selections[row['Question']] = st.selectbox(f"Desired: {row['Question']}", options, key=f"cns_{i}")
+
+    # --- SCORE CALCULATION ---
+    # Map selections to scores based on the Excel 'Marking' logic
+    def get_total_cat_score(selections_dict):
+        cat_totals = []
+        for cat in CATEGORIES:
+            score = 0
+            # Logic to sum marks for each category from df_q
+            cat_totals.append(score) # Placeholder for logic mapping options to marks
+        return cat_totals
+
+    # Example Results Display
+    st.divider()
+    target_country = st.selectbox("Select Country for Benchmarking", list(REGIONAL_WEIGHTS.keys()))
+    
+    # Final Benchmarking Table
+    st.header(f"University Benchmarking Report - {target_country}")
+    # (Here you would merge the scores with df_b)
+    st.dataframe(df_b[df_b['Country'] == target_country])
+
+else:
+    st.warning("Please upload both Excel files to begin.")
