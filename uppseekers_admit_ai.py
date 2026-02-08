@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
-# --- CONFIGURATION ---
-st.set_page_config(layout="wide", page_title="University Profiling Tool")
-
+# --- 1. CONFIGURATION & LOGIC ---
 REGIONAL_WEIGHTS = {
     "USA": [0.20, 0.10, 0.05, 0.05, 0.15, 0.05, 0.20, 0.10, 0.05, 0.05],
     "UK": [0.25, 0.10, 0.05, 0.05, 0.30, 0.02, 0.10, 0.03, 0.00, 0.10],
@@ -19,78 +18,117 @@ REGIONAL_WEIGHTS = {
 
 CATEGORIES = ["Academics", "Rigor", "Testing", "Merit", "Research", "Engagement", "Experience", "Impact", "Public Voice", "Recognition"]
 
-# --- HELPER FUNCTIONS ---
-def calculate_regional_score(category_scores, weights):
-    # category_scores: list of 10 values
-    return sum(s * w for s, w in zip(category_scores, weights))
+st.set_page_config(layout="wide", page_title="University Readiness Profiler")
 
-def get_status(score, benchmark):
-    if score >= benchmark:
-        return "✅ Safe to Target"
-    elif score >= (benchmark * 0.85):
-        return "⚠️ Need Strengthening"
-    else:
-        return "❌ Significant Gap"
+# --- 2. DATA LOADING HELPER ---
+def get_stream_files(selected_course):
+    # Mapping based on your provided filenames
+    mapping = {
+        "CS/AI": ("set_cs-ai.csv", "benchmarking_cs.csv"),
+        "Data Science and Statistics": ("set_ds-stats..csv", "benchmarking_ds.csv"),
+        "Business and Administration": ("set_business.csv", "benchmarking_business.csv"),
+        "Finance and Economics": ("set_finance&Eco..csv", "benchmarking_finance&economic.csv")
+    }
+    return mapping.get(selected_course)
 
-# --- SIDEBAR: FILE UPLOADS ---
-st.sidebar.header("Upload Files")
-q_file = st.sidebar.file_uploader("Upload Readiness File (Questions)", type=['xlsx'])
-b_file = st.sidebar.file_uploader("Upload Benchmarking File", type=['xlsx'])
+# --- 3. UI - SIDEBAR ---
+st.sidebar.header("Control Panel")
+course = st.sidebar.selectbox("Select Student Stream", ["CS/AI", "Data Science and Statistics", "Business and Administration", "Finance and Economics"])
+target_country = st.sidebar.selectbox("Target Country for Analysis", list(REGIONAL_WEIGHTS.keys()))
 
-if q_file and b_file:
-    df_q = pd.read_excel(q_file)
-    df_b = pd.read_excel(b_file)
+q_file, b_file = get_stream_files(course)
 
-    # Stream Selection
-    streams = df_q['Stream'].unique()
-    selected_stream = st.sidebar.selectbox("Select Student Stream", streams)
-    filtered_q = df_q[df_q['Stream'] == selected_stream]
+try:
+    df_q = pd.read_csv(q_file)
+    df_b = pd.read_csv(b_file)
+except FileNotFoundError:
+    st.error(f"Please ensure {q_file} and {b_file} are in the directory.")
+    st.stop()
 
-    st.title(f"Profiling: {selected_stream}")
+# --- 4. SCORING ENGINE ---
+def calculate_weighted_score(category_points, country):
+    weights = REGIONAL_WEIGHTS[country]
+    total = 0
+    # Map category scores to weights (matching order of CATEGORIES constant)
+    for i, cat in enumerate(CATEGORIES):
+        total += category_points.get(cat, 0) * weights[i]
+    return round(total, 2)
 
-    # Layout for Side-by-Side Questioning
-    col_student, col_counselor = st.columns(2)
+# --- 5. MAIN INTERFACE ---
+st.title(f"Profiling Tool: {course}")
+
+col1, col2 = st.columns(2)
+
+student_points = {}
+tuned_points = {}
+
+# We iterate through the questions in the file
+questions = df_q['Specific Question'].unique()
+
+with col1:
+    st.subheader("📋 Student Current Selection")
+    for i, q_text in enumerate(questions):
+        row = df_q[df_q['Specific Question'] == q_text].iloc[0]
+        cat = row['Category']
+        
+        # Create options list and score mapping
+        options = {
+            row['Option A (Elite / Product)']: row['Score A'],
+            row['Option B (Strong / Product)']: row['Score B'],
+            row['Option C (Baseline)']: row['Score C'],
+            row['Option D (Beginner)']: row['Score D']
+        }
+        
+        selection = st.selectbox(f"{cat}: {q_text}", list(options.keys()), key=f"std_{i}")
+        student_points[cat] = student_points.get(cat, 0) + options[selection]
+
+with col2:
+    st.subheader("🔧 Counselor Tuning (Desired)")
+    for i, q_text in enumerate(questions):
+        row = df_q[df_q['Specific Question'] == q_text].iloc[0]
+        cat = row['Category']
+        options = {
+            row['Option A (Elite / Product)']: row['Score A'],
+            row['Option B (Strong / Product)']: row['Score B'],
+            row['Option C (Baseline)']: row['Score C'],
+            row['Option D (Beginner)']: row['Score D']
+        }
+        
+        # Default to what the student picked
+        std_idx = list(options.keys()).index(st.session_state[f"std_{i}"])
+        tuned_selection = st.selectbox(f"Tune {cat}: {q_text}", list(options.keys()), index=std_idx, key=f"tune_{i}")
+        tuned_points[cat] = tuned_points.get(cat, 0) + options[tuned_selection]
+
+# --- 6. RESULTS & BENCHMARKING ---
+st.divider()
+
+curr_score = calculate_weighted_score(student_points, target_country)
+desired_score = calculate_weighted_score(tuned_points, target_country)
+
+# Display Scores Side-by-Side
+m1, m2 = st.columns(2)
+m1.metric("Current Profiling Score", curr_score)
+m2.metric("Desired (Tuned) Score", desired_score, delta=round(desired_score - curr_score, 2))
+
+if st.button("Generate University Benchmark Report"):
+    st.header(f"University Recommendations: {target_country}")
     
-    student_selections = {}
-    tuned_selections = {}
-
-    with col_student:
-        st.header("Student Current Profile")
-        for cat in CATEGORIES:
-            st.subheader(f"Category: {cat}")
-            cat_qs = filtered_q[filtered_q['Category'] == cat]
-            for i, row in cat_qs.iterrows():
-                # Assuming options are stored in a way we can extract
-                options = [row['Option 1'], row['Option 2'], row['Option 3']] # Adjust based on your Excel headers
-                student_selections[row['Question']] = st.selectbox(f"{row['Question']}", options, key=f"std_{i}")
-
-    with col_counselor:
-        st.header("Counselor Tuning (Target)")
-        for cat in CATEGORIES:
-            st.subheader(f"Tuning: {cat}")
-            cat_qs = filtered_q[filtered_q['Category'] == cat]
-            for i, row in cat_qs.iterrows():
-                options = [row['Option 1'], row['Option 2'], row['Option 3']]
-                tuned_selections[row['Question']] = st.selectbox(f"Desired: {row['Question']}", options, key=f"cns_{i}")
-
-    # --- SCORE CALCULATION ---
-    # Map selections to scores based on the Excel 'Marking' logic
-    def get_total_cat_score(selections_dict):
-        cat_totals = []
-        for cat in CATEGORIES:
-            score = 0
-            # Logic to sum marks for each category from df_q
-            cat_totals.append(score) # Placeholder for logic mapping options to marks
-        return cat_totals
-
-    # Example Results Display
-    st.divider()
-    target_country = st.selectbox("Select Country for Benchmarking", list(REGIONAL_WEIGHTS.keys()))
+    # Filter universities for the selected country
+    country_df = df_b[df_b['Country'] == target_country].copy()
     
-    # Final Benchmarking Table
-    st.header(f"University Benchmarking Report - {target_country}")
-    # (Here you would merge the scores with df_b)
-    st.dataframe(df_b[df_b['Country'] == target_country])
+    def get_status(score, benchmark):
+        if score >= benchmark:
+            return "✅ Safe to Target"
+        elif score >= (benchmark * 0.85):
+            return "⚠️ Need Strengthening"
+        else:
+            return "🚨 Significant Gap"
 
-else:
-    st.warning("Please upload both Excel files to begin.")
+    country_df['Current Status'] = country_df['Total Benchmark Score'].apply(lambda x: get_status(curr_score, x))
+    country_df['Desired Status'] = country_df['Total Benchmark Score'].apply(lambda x: get_status(desired_score, x))
+    
+    # Display the final table
+    st.dataframe(
+        country_df[['University', 'Total Benchmark Score', 'Current Status', 'Desired Status']],
+        use_container_width=True
+    )
