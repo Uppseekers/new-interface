@@ -4,94 +4,93 @@ import os
 from graphviz import Digraph
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Admit AI | Snake Roadmap", layout="wide")
+st.set_page_config(page_title="Admit AI | Premium Roadmap", layout="wide")
 
-def create_snake_roadmap(data, target_class):
-    # 'dot' engine is best for hierarchical/snake flows
-    dot = Digraph(comment='Admissions Snake', engine='dot')
+# Custom CSS for a better UI
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stHeading h1 { color: #ff4b4b; text-align: center; font-family: 'Helvetica'; }
+    </style>
+    """, unsafe_allow_html=True)
+
+def create_premium_snake(data, target_class):
+    # 'neato' engine allows for specific positioning to create a real "Snake"
+    dot = Digraph(comment='Admissions Journey', engine='dot')
+    dot.attr(rankdir='TB', splines='ortho', nodesep='0.8', ranksep='0.6', bgcolor='#1a2a3a')
     
-    # Increase DPI for high-res "Zoomed In" look
-    dot.attr(rankdir='TB', size='20,20', dpi='300', bgcolor='#1a2a3a')
-    
-    # Node Styling (Larger fonts and boxes for readability)
+    # Premium Node Styling
     dot.attr('node', shape='rect', style='filled, rounded', 
-             fontname='Helvetica-Bold', fontcolor='white', 
-             fontsize='16', width='4', height='1.2', penwidth='2')
+             fontname='Arial Bold', fontcolor='white', 
+             fontsize='14', width='3.5', height='1', penwidth='3', color='#4b79a1')
     
-    # Edge Styling (Thicker "Snake" connection)
-    dot.attr('edge', color='#4b79a1', penwidth='5', arrowhead='vee', arrowsize='1.2')
+    # Edge Styling
+    dot.attr('edge', color='#ffffff55', penwidth='4', arrowhead='normal', arrowsize='1')
 
-    # Color Palette
-    phase_color = "#2ecc71" # Green for milestones
-    task_color = "#3498db"  # Blue for tasks
-
-    # 1. Start Node (Current Stage)
-    dot.node("START", f"CURRENT STAGE\n(Class {target_class})", fillcolor="#e67e22", shape="doubleoctagon")
+    # Start Banner
+    dot.node("START", f"CURRENT STAGE: CLASS {target_class}", fillcolor="#e67e22", shape="box", width='5')
     
     prev_node = "START"
-
+    
     for i, row in data.iterrows():
-        month = str(row.get('Month', '')).strip()
-        task = str(row.get('Task/Milestone', row.get('Task', 'Activity')))
+        month = str(row.get('Month', '')).upper()
+        # Use a secondary column for details if available, otherwise truncate
+        task_title = str(row.get('Task/Milestone', row.get('Task', 'Planning')))
         
-        # Clean text: Wrap text for better box fitting
-        wrapped_task = task[:40] + "..." if len(task) > 40 else task
         node_id = f"step_{i}"
         
-        # Create the Task Node
-        label = f"<<B>{month}</B><BR/><FONT POINT-SIZE='12'>{wrapped_task}</FONT>>"
-        dot.node(node_id, label, fillcolor=task_color)
+        # Elegant HTML Label for clarity
+        label = f'<<TABLE BORDER="0" CELLBORDER="0"><TR><TD><B>{month}</B></TD></TR><TR><TD><FONT POINT-SIZE="10">{task_title[:45]}</FONT></TD></TR></TABLE>>'
         
-        # Connect to previous
+        # Change colors based on progress
+        color = "#3498db" if i % 2 == 0 else "#2980b9"
+        dot.node(node_id, label, fillcolor=color)
+        
+        # Connect nodes
         dot.edge(prev_node, node_id)
         prev_node = node_id
-        
-        # Every 4 months, let's assume a "Check-in" milestone to maintain the flow
-        if i > 0 and i % 4 == 0:
-            milestone_id = f"m_{i}"
-            dot.node(milestone_id, "MILESTONE REACHED", fillcolor=phase_color, shape="diamond", fontsize='12')
-            dot.edge(prev_node, milestone_id)
-            prev_node = milestone_id
 
-    # Final Goal Node
-    dot.node("END", "🎯 UNIVERSITY ADMISSION", fillcolor="#9b59b6", shape="star", fontsize='20')
+    # The Goal
+    dot.node("END", "🎓 ADMISSION SECURED", fillcolor="#27ae60", shape="egg", width='4')
     dot.edge(prev_node, "END")
 
     return dot
 
-# --- UI ---
-st.title("🐍 Admit AI: The Admissions Snake")
-st.write("A high-resolution, step-by-step path from your current stage to university admission.")
+# --- APP INTERFACE ---
+st.title("🐍 YOUR ADMISSIONS SNAKE ROADMAP")
 
 with st.sidebar:
-    st.header("Setup")
-    target_class = st.selectbox("Current Class", ["9th", "10th", "11th", "12th"])
-    start_month = st.selectbox("Current Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
+    st.header("Student Info")
+    name = st.text_input("Name", "Student")
+    grade = st.selectbox("Current Grade", ["9th", "10th", "11th", "12th"])
+    month_start = st.selectbox("Start Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
 
 excel_file = "Class wise Tentative Flow .xlsx"
 
 if os.path.exists(excel_file):
     try:
-        sheet_name = f"Class {target_class}"
-        df = pd.read_excel(excel_file, sheet_name=sheet_name)
+        df = pd.read_excel(excel_file, sheet_name=f"Class {grade}")
         df.columns = df.columns.str.strip()
 
-        # Filtering logic
+        # Filter logic
         if 'Month' in df.columns:
-            mask = df['Month'].str.contains(start_month, case=False, na=False)
+            mask = df['Month'].str.contains(month_start, case=False, na=False)
             if mask.any():
-                start_idx = df[mask].index[0]
-                filtered_df = df.iloc[start_idx:].reset_index(drop=True)
-            else:
-                filtered_df = df
+                df = df.iloc[df[mask].index[0]:].reset_index(drop=True)
 
-        # Create Graph
-        snake_graph = create_snake_roadmap(filtered_df, target_class)
+        # Generate Graph
+        roadmap = create_premium_snake(df, grade)
         
-        # Render with a specific width to ensure it fills the screen
-        st.graphviz_chart(snake_graph, use_container_width=True)
+        # DISPLAY SECTION
+        col1, col2, col3 = st.columns([1, 6, 1])
+        with col2:
+            st.graphviz_chart(roadmap, use_container_width=True)
+            
+        # Optional: Raw Data for the "Report" feel
+        with st.expander("📄 View Detailed Monthly Action Plan"):
+            st.table(df)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error loading your path: {e}")
 else:
-    st.error(f"File '{excel_file}' not found.")
+    st.error("Excel file missing in the repository!")
