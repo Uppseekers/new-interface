@@ -5,107 +5,161 @@ import os
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Admit AI | Snake Roadmap", layout="wide")
 
-# --- CUSTOM STYLING (The "Secret Sauce") ---
+# --- CUSTOM CSS FOR THE SNAKE & CARDS ---
 st.markdown("""
 <style>
+    /* Main Container */
+    .roadmap-wrapper {
+        background-color: #0f172a;
+        padding: 40px;
+        border-radius: 20px;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* The Snake Path Line */
     .roadmap-container {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        position: relative;
+    }
+
+    /* Milestone Header */
+    .milestone-banner {
+        background: linear-gradient(90deg, #3b82f6, #2563eb);
+        color: white;
         padding: 20px;
-        background-color: #1a2a3a;
-        border-radius: 15px;
-    }
-    .milestone-header {
-        grid-column: span 3;
-        background: linear-gradient(90deg, #e67e22, #d35400);
-        color: white;
-        padding: 15px;
         text-align: center;
-        border-radius: 10px;
-        font-weight: bold;
-        font-size: 24px;
-        margin: 20px 0;
+        border-radius: 15px;
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        margin: 40px 0;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
     }
+
+    /* Task Card Design */
     .task-card {
-        background-color: #2980b9;
-        color: white;
-        padding: 15px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-left: 6px solid #fbbf24;
+        padding: 20px;
         border-radius: 12px;
-        border-left: 8px solid #f1c40f;
-        box-shadow: 4px 4px 10px rgba(0,0,0,0.3);
-        min-height: 100px;
+        position: relative;
+        transition: transform 0.2s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-    .month-badge {
-        background-color: #f1c40f;
-        color: #1a2a3a;
-        padding: 2px 8px;
-        border-radius: 5px;
-        font-weight: bold;
+    
+    .task-card:hover {
+        transform: translateY(-5px);
+        background: #233044;
+    }
+
+    .month-tag {
+        background: #fbbf24;
+        color: #1e293b;
+        font-weight: 800;
+        padding: 4px 12px;
+        border-radius: 6px;
         font-size: 12px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
         display: inline-block;
-        margin-bottom: 8px;
     }
-    .task-name {
+
+    .task-title {
+        color: #f8fafc;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+
+    .task-details {
+        color: #94a3b8;
         font-size: 14px;
-        font-weight: 500;
-        line-height: 1.4;
+        line-height: 1.6;
+    }
+
+    .detail-item {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #334155;
+        font-style: italic;
+        color: #38bdf8;
+    }
+
+    /* Connection Arrow */
+    .connector {
+        text-align: center;
+        color: #334155;
+        font-size: 24px;
+        margin: -10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- APP UI ---
-st.title("🐍 Admit AI: Complete Admissions Snake")
+# --- APP LOGIC ---
+st.title("🐍 Admit AI: Detailed Journey Roadmap")
 
 with st.sidebar:
-    st.header("Settings")
+    st.header("1. Student Details")
     name = st.text_input("Student Name", "Aspirant")
     target_class = st.selectbox("Current Class", ["9th", "10th", "11th", "12th"])
-    month_start = st.selectbox("Current Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
+    start_month = st.selectbox("Current Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
 
-# Load Excel Logic
 excel_file = "Class wise Tentative Flow .xlsx"
 
 if os.path.exists(excel_file):
     try:
-        # Load data for the selected class
+        # Load the right sheet
         df = pd.read_excel(excel_file, sheet_name=f"Class {target_class}")
-        df.columns = df.columns.str.strip()
+        df.columns = [c.strip() for c in df.columns]
 
-        # Filtering: Only show from the current month onwards
+        # Filter for Start Month
         if 'Month' in df.columns:
-            mask = df['Month'].str.contains(month_start, case=False, na=False)
+            mask = df['Month'].str.contains(start_month, case=False, na=False)
             if mask.any():
                 df = df.iloc[df[mask].index[0]:].reset_index(drop=True)
 
-        # --- BUILDING THE VISUAL SNAKE ---
-        st.markdown('<div class="roadmap-container">', unsafe_allow_html=True)
+        # --- DRAWING THE ROADMAP ---
+        st.markdown('<div class="roadmap-wrapper">', unsafe_allow_html=True)
+        st.markdown(f'<div class="milestone-banner">🚀 START: CLASS {target_class} JOURNEY</div>', unsafe_allow_html=True)
         
-        # Milestone Banner
-        st.markdown(f'<div class="milestone-header">🚩 STARTING POINT: CLASS {target_class}</div>', unsafe_allow_html=True)
-
         for i, row in df.iterrows():
-            month = str(row.get('Month', '')).upper()
-            task = str(row.get('Task/Milestone', row.get('Task', 'Step')))
+            month = str(row.get('Month', 'Unknown')).upper()
             
-            # Logic for "Snake" direction (Visualizing connections)
-            # Row 1: 1 -> 2 -> 3
-            # Row 2: 6 <- 5 <- 4
-            # This logic can be expanded, but for a "One Screen" view, 
-            # a standard 3-column grid is much more readable.
-            
+            # Logic to handle different column names between Class 9-11 and Class 12
+            if target_class == "12th":
+                task_name = row.get('Phase', 'Admissions Phase')
+                # Combine multiple region details for Class 12
+                details = f"<b>USA:</b> {row.get('USA (Private/Ivies) ', 'N/A')}<br><b>UK:</b> {row.get('UK (UCAS) ', 'N/A')}"
+                additional = f"Singapore/Europe: {row.get('Singapore (NUS/NTU)', '')}"
+            else:
+                task_name = row.get('Task Name', row.get('Phase', 'Milestone'))
+                details = row.get('Outcome ', 'Building profile and academic excellence.')
+                additional = row.get('Additional Info', '')
+
+            # Render Card
             st.markdown(f"""
                 <div class="task-card">
-                    <div class="month-badge">{month}</div>
-                    <div class="task-name">{task}</div>
+                    <div class="month-tag">{month}</div>
+                    <div class="task-title">{task_name}</div>
+                    <div class="task-details">{details}</div>
+                    {"<div class='detail-item'>💡 " + str(additional) + "</div>" if str(additional) != 'nan' and additional else ""}
                 </div>
+                <div class="connector">↓</div>
             """, unsafe_allow_html=True)
 
-        # Final Milestone
-        st.markdown(f'<div class="milestone-header">🎓 GOAL: UNIVERSITY ADMISSION</div>', unsafe_allow_html=True)
+        st.markdown('<div class="milestone-banner">🎯 GOAL: UNIVERSITY ADMISSION SECURED</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # Download Section
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("2. Export Report")
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.sidebar.download_button("Download Data (CSV)", csv, f"{name}_roadmap.csv", "text/csv")
+
     except Exception as e:
-        st.error(f"Error loading sheet: {e}")
+        st.error(f"Error loading your data: {e}")
 else:
-    st.error(f"Please upload '{excel_file}' to your GitHub repository.")
+    st.error(f"File '{excel_file}' not found in the repository.")
