@@ -4,3 +4,4 @@ openpyxl
 reportlab
 Pillow
 fpdf
+graphviz
