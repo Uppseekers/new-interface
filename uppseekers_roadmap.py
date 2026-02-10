@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Admit AI | Transition Roadmap", layout="wide")
+st.set_page_config(page_title="Admit AI | The Bridge Roadmap", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -14,7 +14,10 @@ st.markdown("""
         color: white; padding: 20px; text-align: center; border-radius: 15px;
         font-size: 26px; font-weight: 800; margin: 30px 0;
     }
-    .phase-label { color: #fbbf24; font-size: 14px; font-weight: bold; margin-bottom: 5px; }
+    .phase-divider {
+        background: #ef4444; color: white; padding: 10px; text-align: center;
+        border-radius: 8px; font-weight: bold; margin: 20px 0; text-transform: uppercase;
+    }
     .task-card {
         background: #1e293b; border-left: 6px solid #fbbf24;
         padding: 25px; border-radius: 12px; margin-bottom: 10px;
@@ -29,109 +32,106 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Helper to process Class 12 logic for specific countries
+# --- HELPER: MAP COUNTRY DETAILS ---
 def get_country_details(row, country):
     if country == "USA":
-        return row.get('USA (Private/Ivies)', 'Apply/Research Universities.')
+        return row.get('USA (Private/Ivies)', 'Focus on Early Action / Regular Decision.')
     elif country == "UK":
-        return row.get('UK (UCAS)', 'Follow UCAS process.')
+        return row.get('UK (UCAS)', 'Follow UCAS deadlines.')
     elif country == "Singapore":
-        return row.get('Singapore (NUS/NTU)', 'Academic review.')
+        return row.get('Singapore (NUS/NTU)', 'Academic excellence and local board prep.')
     elif country == "Germany":
-        raw = str(row.get('Singapore (NUS/NTU)', 'Public University prep.'))
-        return raw.replace("Singapore", "Germany").replace("NUS/NTU", "Public Universities")
+        text = str(row.get('Singapore (NUS/NTU)', 'Research German Public Universities.'))
+        return text.replace("Singapore", "Germany").replace("NUS/NTU", "Public Universities")
     elif country == "Australia":
-        return row.get('Europe / Australia', 'Visa and Entry prep.')
+        return row.get('Europe / Australia', 'Check GTE and entry requirements.')
     elif country == "Canada":
-        raw = str(row.get('Europe / Australia', 'Application prep.'))
-        return raw.replace("Australia", "Canada")
-    return "Global application prep."
+        text = str(row.get('Europe / Australia', 'Research SPP colleges and universities.'))
+        return text.replace("Australia", "Canada")
+    return ""
 
 # --- APP UI ---
-st.title("🐍 The Admissions Bridge: Journey to University")
+st.title("🐍 Admit AI: The Integrated Journey")
 
 with st.sidebar:
-    st.header("Profile Configuration")
+    st.header("Step 1: Profile")
     name = st.text_input("Student Name", "Aspirant")
-    current_class = st.selectbox("Current Class", ["9th", "10th", "11th", "12th"])
+    target_class = st.selectbox("Current Class", ["9th", "10th", "11th", "12th"])
     target_country = st.selectbox("Target Country", ["USA", "UK", "Singapore", "Australia", "Canada", "Germany"])
-    start_month = st.selectbox("Start Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
+    start_month = st.selectbox("Start Month", ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"])
 
 excel_file = "Class wise Tentative Flow .xlsx"
 
 if os.path.exists(excel_file):
     try:
-        # 1. LOAD DATA
-        df_current = pd.read_excel(excel_file, sheet_name=f"Class {current_class}")
+        # --- 1. PREPARE CURRENT CLASS DATA ---
+        df_current = pd.read_excel(excel_file, sheet_name=f"Class {target_class}")
         df_current.columns = [str(c).strip() for c in df_current.columns]
         
+        # Filter from start month until July of "Last Year"
+        if target_class != "12th":
+            # Finding the start index
+            start_mask = df_current['Month'].str.contains(start_month, case=False, na=False)
+            start_idx = df_current[start_mask].index[0] if start_mask.any() else 0
+            
+            # User wants to follow until July. 
+            # We look for the last row in this sheet that contains "July"
+            july_mask = df_current['Month'].str.contains("July", case=False, na=False)
+            end_idx = df_current[july_mask].index[-1] if july_mask.any() else len(df_current)-1
+            
+            roadmap_part1 = df_current.iloc[start_idx : end_idx + 1]
+        else:
+            # If student is already in 12th, part 1 is empty or we handle it differently
+            roadmap_part1 = pd.DataFrame()
+
+        # --- 2. PREPARE CLASS 12TH SPRINT DATA ---
         df_12 = pd.read_excel(excel_file, sheet_name="Class 12th")
         df_12.columns = [str(c).strip() for c in df_12.columns]
-
-        # 2. SEPARATE JOURNEYS
-        # We define August as the transition point
-        months_order = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-        aug_idx = months_order.index("August")
-        start_idx = months_order.index(start_month)
-
-        combined_data = []
-
-        # Part A: Current Class Plan (From Start Month until July)
-        # If user starts after July, we skip this and jump straight to Class 12
-        if start_idx < aug_idx and current_class != "12th":
-            # Filter current grade's sheet for months before August
-            pre_aug_df = df_current[~df_current['Month'].str.contains('August|September|October|November|December', case=False, na=False)]
-            # Further filter by selected start month
-            mask = pre_aug_df['Month'].str.contains(start_month, case=False, na=False)
-            if mask.any():
-                pre_aug_df = pre_aug_df.iloc[pre_aug_df[mask].index[0]:]
-            
-            for _, row in pre_aug_df.iterrows():
-                combined_data.append({
-                    "Month": row.get('Month'),
-                    "Title": row.get('Task Name', row.get('Phase', 'Requirement')),
-                    "Details": row.get('Outcome ', 'Academic and profile building.'),
-                    "Phase": "Current Grade Preparation"
-                })
-
-        # Part B: Class 12th Plan (From August to January)
-        # We always include Class 12th Aug-Jan journey as the "Final Stretch"
-        post_aug_df = df_12[df_12['Month'].str.contains('August|September|October|November|December|January', case=False, na=False)]
         
-        # If current class is already 12th, filter by start month
-        if current_class == "12th":
-            mask = post_aug_df['Month'].str.contains(start_month, case=False, na=False)
-            if mask.any():
-                post_aug_df = post_aug_df.iloc[post_aug_df[mask].index[0]:]
+        # Start from August as requested
+        aug_mask = df_12['Month'].str.contains("Aug", case=False, na=False)
+        aug_idx = df_12[aug_mask].index[0] if aug_mask.any() else 1 # Default to row 1 (July-Aug)
+        
+        # Go until January journey as requested
+        jan_mask = df_12['Month'].str.contains("Jan", case=False, na=False)
+        end_12_idx = df_12[jan_mask].index[0] if jan_mask.any() else len(df_12)-1
+        
+        roadmap_part2 = df_12.iloc[aug_idx : end_12_idx + 1]
 
-        for _, row in post_aug_df.iterrows():
-            combined_data.append({
-                "Month": row.get('Month'),
-                "Title": row.get('Phase', 'Admissions Step'),
-                "Details": get_country_details(row, target_country),
-                "Phase": f"Class 12th {target_country} Journey"
-            })
-
-        # --- RENDER ROADMAP ---
+        # --- 3. RENDERING THE INTEGRATED SNAKE ---
         st.markdown('<div class="roadmap-wrapper">', unsafe_allow_html=True)
-        st.markdown(f'<div class="milestone-banner">🚩 {name.upper()}\'S ADMISSIONS ROADMAP</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="milestone-banner">🎓 {name.upper()}\'S {target_country.upper()} JOURNEY</div>', unsafe_allow_html=True)
 
-        for i, item in enumerate(combined_data):
-            # Render Card
+        # Part 1: Current Class (Foundation)
+        if not roadmap_part1.empty:
+            st.markdown(f'<div class="phase-divider">Phase 1: {target_class} Grade Foundation (Until July)</div>', unsafe_allow_html=True)
+            for _, row in roadmap_part1.iterrows():
+                st.markdown(f"""
+                    <div class="task-card">
+                        <div class="month-tag">{str(row.get('Month')).upper()}</div>
+                        <div class="task-title">{row.get('Task Name', row.get('Phase', 'Milestone'))}</div>
+                        <div class="task-details">{row.get('Outcome ', 'Building profile milestones.')}</div>
+                    </div>
+                    <div class="connector">↓</div>
+                """, unsafe_allow_html=True)
+
+        # Part 2: The 12th Grade Sprint (Switching sheets)
+        st.markdown(f'<div class="phase-divider">Phase 2: Class 12th Final Admissions (Aug to Jan)</div>', unsafe_allow_html=True)
+        for _, row in roadmap_part2.iterrows():
+            details = get_country_details(row, target_country)
             st.markdown(f"""
-                <div class="phase-label">{item['Phase']}</div>
                 <div class="task-card">
-                    <div class="month-tag">{str(item['Month']).upper()}</div>
-                    <div class="task-title">{item['Title']}</div>
-                    <div class="task-details">{item['Details']}</div>
+                    <div class="month-tag">{str(row.get('Month')).upper()}</div>
+                    <div class="task-title">{row.get('Phase', 'Admissions Step')}</div>
+                    <div class="task-details">{details}</div>
                 </div>
                 <div class="connector">↓</div>
             """, unsafe_allow_html=True)
 
-        st.markdown(f'<div class="milestone-banner">🎓 ADMISSION SECURED IN {target_country.upper()}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="milestone-banner">🎯 GOAL REACHED: {target_country.upper()} ADMISSION</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Error building roadmap: {e}")
+        st.error(f"Error building integrated roadmap: {e}")
 else:
     st.error("Excel file not found.")
