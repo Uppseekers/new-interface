@@ -99,7 +99,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- APP LOGIC ---
-st.title("🐍 Admit AI: Detailed Journey Roadmap")
+st.title("Admit AI: Detailed Journey Roadmap")
 
 with st.sidebar:
     st.header("1. Student Details")
